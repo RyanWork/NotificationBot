@@ -14,7 +14,7 @@ class NotificationCog(commands.Cog):
         self.notificationLink = None
         self.runInterval = 0
         self.ctx = None
-        self.ctxLock = asyncio.Lock()
+        self.ctxLock = asyncio.BoundedSemaphore()
         self.started = False
 
     @tasks.loop(seconds=check_reminder_interval)
@@ -48,8 +48,8 @@ class NotificationCog(commands.Cog):
             self.ctx = ctx
 
         if self.started is False:
-            self.started = True
             self.check_reminder.start()
+            self.started = True
 
     @commands.command()
     async def stop(self, _):
@@ -71,8 +71,9 @@ class NotificationCog(commands.Cog):
 
     async def send_reminder(self, ctx, notification):
         if notification is not None:
-            await ctx.send('{0}\n{1}'.format(notification,
-                                             self.notificationLink if
-                                             self.notificationLink is not None
-                                             else ""))
+            async with self.ctxLock:
+                await ctx.send('{0}\n{1}'.format(notification,
+                                                 self.notificationLink if
+                                                 self.notificationLink is not None
+                                                 else ""))
         self.lastRunTime = datetime.now()
