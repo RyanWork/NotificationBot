@@ -1,7 +1,9 @@
 from discord.ext import commands, tasks
 from notificationCog import NotificationCog
+from dotenv import load_dotenv
+import os
 
-
+load_dotenv()
 bot = commands.Bot(command_prefix='!')
 bot.add_cog(NotificationCog(bot))
-bot.run('ODI3MDMxMTIwODg4NDYzMzcw.YGVGwA.R7Q_VkZttU-2RSXxKiW4Cjb27TI')
+bot.run(os.environ.get('BOT_TOKEN'))

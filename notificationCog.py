@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 import asyncio
 
-check_reminder_interval = 10.0
+check_reminder_interval = 1.0
 
 
 class NotificationCog(commands.Cog):
@@ -22,8 +22,6 @@ class NotificationCog(commands.Cog):
         if (self.lastRunTime is None or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
                 and self.notificationText is not None:
             await self.send_reminder(self.ctx, self.notificationText)
-
-        await self.ctx.send('lastRunTime is: {0}'.format(self.lastRunTime))
 
     @commands.command()
     async def link(self, _, arg):
@@ -50,6 +48,7 @@ class NotificationCog(commands.Cog):
             self.ctx = ctx
 
         if self.started is False:
+            self.started = True
             self.check_reminder.start()
 
     @commands.command()
