@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 import asyncio
 
+check_reminder_interval = 10.0
+
 
 class NotificationCog(commands.Cog):
     def __init__(self, bot):
@@ -15,7 +17,7 @@ class NotificationCog(commands.Cog):
         self.ctxLock = asyncio.Lock()
         self.started = False
 
-    @tasks.loop(seconds=10.0)
+    @tasks.loop(seconds=check_reminder_interval)
     async def check_reminder(self):
         if (self.lastRunTime is None or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
                 and self.notificationText is not None:
@@ -23,25 +25,24 @@ class NotificationCog(commands.Cog):
 
         await self.ctx.send('lastRunTime is: {0}'.format(self.lastRunTime))
 
-    @check_reminder.after_loop
-    async def on_check_remind_cancel(self):
-        print("done")
-        return
-
     @commands.command()
     async def link(self, _, arg):
         self.notificationLink = arg
-        return
 
     @commands.command()
     async def text(self, _, arg):
         self.notificationText = arg
-        return
 
     @commands.command()
-    async def interval(self, _, arg):
-        self.runInterval = arg
-        return
+    async def interval(self, ctx, arg):
+        try:
+            parsed_int = int(arg)
+            if parsed_int > check_reminder_interval:
+                self.runInterval = parsed_int
+            else:
+                await ctx.send("Value must be > {0}".format(check_reminder_interval))
+        except ValueError:
+            await ctx.send("Invalid value.")
 
     @commands.command()
     async def start(self, ctx):
@@ -51,7 +52,10 @@ class NotificationCog(commands.Cog):
         if self.started is False:
             self.check_reminder.start()
 
-        return
+    @commands.command()
+    async def stop(self, _):
+        self.check_reminder.cancel()
+        self.started = False
 
     @commands.command(name='set')
     async def set_text_and_link(self, ctx, *args):
@@ -61,8 +65,6 @@ class NotificationCog(commands.Cog):
 
         self.notificationText = args[0]
         self.notificationLink = args[1]
-        await ctx.send('Set: {0} and {1}'.format(args[0], args[1]))
-        return
 
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
