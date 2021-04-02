@@ -21,7 +21,7 @@ class NotificationCog(commands.Cog):
     async def check_reminder(self):
         if (self.lastRunTime is None or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
                 and self.notificationText is not None:
-            await self.send_reminder(self.ctx, self.notificationText)
+            await self.send_reminder(self.notificationText)
 
     @commands.command()
     async def link(self, _, arg):
@@ -32,15 +32,15 @@ class NotificationCog(commands.Cog):
         self.notificationText = arg
 
     @commands.command()
-    async def interval(self, ctx, arg):
+    async def interval(self, _, arg):
         try:
             parsed_int = int(arg)
             if parsed_int > check_reminder_interval:
                 self.runInterval = parsed_int
             else:
-                await ctx.send("Value must be > {0}".format(check_reminder_interval))
+                await self.send("Value must be > {0}".format(check_reminder_interval))
         except ValueError:
-            await ctx.send("Invalid value.")
+            await self.send("Invalid value.")
 
     @commands.command()
     async def start(self, ctx):
@@ -57,9 +57,9 @@ class NotificationCog(commands.Cog):
         self.started = False
 
     @commands.command(name='set')
-    async def set_text_and_link(self, ctx, *args):
+    async def set_text_and_link(self, _, *args):
         if len(args) < 0 or len(args) > 2:
-            await ctx.send('Please provide two parameters.\r\n Ex: !set "Some kind of text" https://google.com')
+            await self.send('Please provide two parameters.\r\n Ex: !set "Some kind of text" https://google.com')
             return
 
         self.notificationText = args[0]
@@ -69,11 +69,14 @@ class NotificationCog(commands.Cog):
     async def before_check_reminder_loop(self):
         await self.bot.wait_until_ready()
 
-    async def send_reminder(self, ctx, notification):
-        if notification is not None:
-            async with self.ctxLock:
-                await ctx.send('{0}\n{1}'.format(notification,
-                                                 self.notificationLink if
-                                                 self.notificationLink is not None
-                                                 else ""))
+    async def send(self, message):
+        async with self.ctxLock:
+            await self.ctx.send(message)
+
+    async def send_reminder(self, notification):
         self.lastRunTime = datetime.now()
+        if notification is not None:
+            await self.send('{0}\n{1}'.format(notification,
+                                              self.notificationLink if
+                                              self.notificationLink is not None
+                                              else ""))
