@@ -3,6 +3,14 @@ from discord.ext import commands, tasks
 import asyncio
 
 check_reminder_interval = 1.0
+interval_lookup = {
+    "second": 1,
+    "minute": 60,
+    "hour": 3600,
+    "day": 86400,
+    "week": 604800,
+    "month": 2419200
+}
 
 
 class NotificationCog(commands.Cog):
@@ -21,14 +29,35 @@ class NotificationCog(commands.Cog):
 
     @tasks.loop(seconds=check_reminder_interval)
     async def check_reminder(self):
+        """
+        Process if any reminders need to be sent
+        Loops every check_reminder_interval to check if any reminders need to be sent.
+        Compares if the last time the message has been sent has elapsed the requested interval.
+        """
         async with self.runIntervalLock:
             async with self.textLock:
-                if (self.lastRunTime is None or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
+                if (self.lastRunTime is None
+                    or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
                         and self.notification_text is not None:
                     await self.send_reminder(self.notification_text)
 
     @commands.command()
+    async def create(self, ctx, arg):
+        """
+        Create a new reminder.
+        :param ctx: The context from which a message was received.
+        :param arg:
+        """
+        return
+
+    @commands.command()
     async def link(self, _, arg):
+        """
+        Attach a link to a reminder
+        :param arg:
+        :param _:
+        :return:
+        """
         async with self.linkLock:
             self.notification_link = arg
 
@@ -38,12 +67,28 @@ class NotificationCog(commands.Cog):
             self.notification_text = arg
 
     @commands.command()
-    async def interval(self, _, arg):
+    async def interval(self, _, *args):
+        """
+        Set the interval for how often the reminder should be sent.
+        If no time unit is specified, assume seconds.
+        :param args: list of arguments passed to the interval method
+        :param _:
+        :return:
+        """
+        if len(args) < 0:
+            await self.send("Ex. !interval 10 days")
+
+        time_factor = 1
+        if args[1] is not None:
+            time_unit = args[1].lower().rstrip('s')
+            if time_unit in interval_lookup:
+                time_factor = interval_lookup[time_unit]
+
         try:
-            parsed_int = int(arg)
-            if parsed_int > check_reminder_interval:
+            parsed_int = int(args[0])
+            if parsed_int * time_factor > check_reminder_interval:
                 async with self.runIntervalLock:
-                    self.runInterval = parsed_int
+                    self.runInterval = parsed_int * time_factor
             else:
                 await self.send("Value must be > {0}".format(check_reminder_interval))
         except ValueError:

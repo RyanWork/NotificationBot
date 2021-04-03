@@ -1,4 +1,4 @@
-from discord.ext import commands, tasks
+from discord.ext import commands
 from notificationCog import NotificationCog
 from dotenv import load_dotenv
 import os
