@@ -74,10 +74,10 @@ class NotificationCog(commands.Cog):
         :param ctx: The context from where the message was sent.
         :param arg: The key of the reminder to delete.
         """
-        if self.key_is_valid(ctx, arg):
+        if await self.is_key_valid(ctx, arg):
             async with self.notificationListLock:
                 del self.notificationList[arg]
-                await ctx.send("Reminder _{0}_ was successfully deleted.".format(arg))
+            await ctx.send("Reminder _{0}_ was successfully deleted.".format(arg))
 
     @commands.command()
     async def list(self, ctx):
@@ -99,7 +99,7 @@ class NotificationCog(commands.Cog):
         :param arg: the key of the notification to get the status of.
         """
         if await self.is_key_valid(ctx, arg):
-            reminder = self.get_reminder(arg)
+            reminder = await self.get_reminder(arg)
             interval_unit = get_time_unit(reminder.runInterval)
             await ctx.send(wrap_code_block(
                 "Name: {0}\r\n"
@@ -108,12 +108,12 @@ class NotificationCog(commands.Cog):
                 "Running Interval: {3} {4}(s)\r\n"
                 "Running: {5}\r\n"
                 "Last Ran: {6}".format(arg,
-                                       reminder.notification_text,
-                                       reminder.notification_link,
+                                       reminder.notification_text if not None else "N/A",
+                                       reminder.notification_link if not None else "N/A",
                                        round(reminder.runInterval / interval_lookup[interval_unit], 2),
                                        interval_unit,
                                        reminder.started,
-                                       reminder.lastRunTime)))
+                                       reminder.lastRunTime if not None else "N/A")))
 
     @commands.command()
     async def start(self, ctx, arg):
@@ -125,7 +125,8 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification was successfully started.
         """
         if await self.is_key_valid(ctx, arg):
-            await self.get_reminder(arg).set_started(True)
+            reminder = await self.get_reminder(arg)
+            await reminder.set_started(True)
             await ctx.send("Reminder _{0}_ was started.".format(arg))
             return True
 
@@ -141,7 +142,8 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification was successfully stopped.
         """
         if await self.is_key_valid(ctx, arg):
-            await self.get_reminder(arg).set_started(False)
+            reminder = await self.get_reminder(arg)
+            await reminder.set_started(False)
             await ctx.send("Reminder _{0}_ was stopped.".format(arg))
             return True
 
@@ -157,7 +159,8 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification link was successfully set.
         """
         if await self.is_key_valid(ctx, args[0]):
-            await self.get_reminder(args[0]).set_link(args[1])
+            reminder = await self.get_reminder(args[0])
+            await reminder.set_link(args[1])
             await ctx.send("Updated link for _{0}_.".format(args[0]))
             return True
 
@@ -173,7 +176,8 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification text was successfully set.
         """
         if await self.is_key_valid(ctx, args[0]):
-            await self.get_reminder(args[0]).set_text(args[1])
+            reminder = await self.get_reminder(args[0])
+            await reminder.set_text(args[1])
             await ctx.send("Updated text for _{0}_.".format(args[0]))
             return True
 
@@ -190,21 +194,11 @@ class NotificationCog(commands.Cog):
         :param key: The requested key to check if it exists/does not exist.
         :return: A boolean indicating if a the key is valid or not.
         """
-        return await self.is_key_valid(ctx, key, "Reminder _{0}_ does not exist.".format(key))
-
-    async def is_key_valid(self, ctx, key, error_message):
-        """
-        Check if a key already exists and send a message if it does not.
-        :param ctx: The context of where to send the message.
-        :param key: The requested key to check if it exists/does not exist.
-        :param error_message: The ewrror message to send if the key is invalid.
-        :return: A boolean indicating if a the key is valid or not.
-        """
         async with self.notificationListLock:
             if key in self.notificationList:
                 return True
             else:
-                await ctx.send(error_message)
+                await ctx.send("Reminder _{0}_ does not exist.".format(key))
                 return False
 
     async def get_reminder(self, key):
@@ -214,7 +208,7 @@ class NotificationCog(commands.Cog):
         :return: The reminder object at the specified key.
         """
         async with self.notificationListLock:
-            return self.notificationListLock[key]
+            return self.notificationList[key]
 
 
 def parse_interval(interval, interval_unit):

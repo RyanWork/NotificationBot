@@ -30,10 +30,12 @@ class notification:
     async def set_interval(self, interval):
         async with self.runIntervalLock:
             self.runInterval = interval
+        return self.runInterval
 
     async def set_started(self, running_state):
         async with self.startLock:
-            self.startLock = running_state
+            self.started = running_state
+        return self.started
 
     async def send(self, message):
         async with self.ctxLock:
