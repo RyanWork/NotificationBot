@@ -162,6 +162,12 @@ class NotificationCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def is_key_valid(self, ctx, key):
+        """
+        Check if a key already exists and send a message if it does not
+        :param ctx: The context of where to send the message
+        :param key: The requested key to check if it exists/does not exist
+        :return: A boolean indicating if a the key is valid or not
+        """
         if key in self.notificationList:
             return True
         else:
@@ -170,6 +176,13 @@ class NotificationCog(commands.Cog):
 
 
 def parse_interval(interval, interval_unit):
+    """
+    Parses a provided interval to see if it is valid.
+    Also returns the associated unit that is formatted correctly.
+    :param interval: The interval string that was entered.
+    :param interval_unit: The unit of time provided for the interval.
+    :return: The actual interval based off the time factor.
+    """
     time_factor = 1
     if interval_unit is not None:
         time_unit = interval_unit.lower().rstrip('s')
