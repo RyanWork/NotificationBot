@@ -5,16 +5,17 @@ from datetime import datetime
 
 @dataclass
 class notification:
-    lastRunTime = None
     ctx = None
+    runInterval = 0
     notification_text = None
     notification_link = None
-    runInterval = 0
+    started = False
     ctxLock = asyncio.BoundedSemaphore()
     textLock = asyncio.BoundedSemaphore()
     linkLock = asyncio.BoundedSemaphore()
     runIntervalLock = asyncio.BoundedSemaphore()
-    started = False
+    startLock = asyncio.BoundedSemaphore()
+    lastRunTime = None
 
     async def set_link(self, link):
         async with self.linkLock:
@@ -29,6 +30,10 @@ class notification:
     async def set_interval(self, interval):
         async with self.runIntervalLock:
             self.runInterval = interval
+
+    async def set_started(self, running_state):
+        async with self.startLock:
+            self.startLock = running_state
 
     async def send(self, message):
         async with self.ctxLock:

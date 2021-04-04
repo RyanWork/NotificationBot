@@ -68,7 +68,34 @@ class NotificationCog(commands.Cog):
         :return:
         """
         if len(self.notificationList) > 0:
-            await ctx.send("\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList)))
+            await ctx.send(
+                wrap_code_block(
+                    "\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList))))
+
+    @commands.command()
+    async def status(self, ctx, arg):
+        """
+        Retrieve the current status of the specified reminder
+        :param ctx: the context of where the command was received
+        :param arg: the key of the notification to get the status of
+        :return:
+        """
+        if await self.is_key_valid(ctx, arg):
+            reminder = self.notificationList[arg]
+            interval_unit = get_time_unit(reminder.runInterval)
+            await ctx.send(wrap_code_block(
+                "Name: {0}\r\n"
+                "Current Text: {1}\r\n"
+                "Current Link: {2}\r\n"
+                "Running Interval: {3} {4}(s)\r\n"
+                "Running: {5}\r\n"
+                "Last Ran: {6}".format(arg,
+                                       reminder.notification_text,
+                                       reminder.notification_link,
+                                       round(reminder.runInterval / interval_lookup[interval_unit], 2),
+                                       interval_unit,
+                                       reminder.started,
+                                       reminder.lastRunTime)))
 
     @commands.command()
     async def start(self, ctx, arg):
@@ -80,7 +107,7 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification was successfully started
         """
         if await self.is_key_valid(ctx, arg):
-            self.notificationList[arg].started = True
+            await self.notificationList[arg].set_started(True)
             return True
 
         return False
@@ -95,37 +122,37 @@ class NotificationCog(commands.Cog):
         :return: a boolean indicating if the notification was successfully stopped
         """
         if await self.is_key_valid(ctx, arg):
-            self.notificationList[arg].started = False
-            return False
-
-        return False
-
-    @commands.command()
-    async def link(self, ctx, *arg):
-        """
-        Set the link at the specified notification
-        Ex. !link "some_key" "https://google.com"
-        :param ctx: the context of where the command was received
-        :param arg: the key of the notification to set the link
-        :return: a boolean indicating if the notification link was successfully set
-        """
-        if await self.is_key_valid(ctx, arg[0]):
-            self.notificationList[arg].notification_link = arg[1]
+            await self.notificationList[arg].set_started(False)
             return True
 
         return False
 
     @commands.command()
-    async def text(self, ctx, *arg):
+    async def link(self, ctx, *args):
+        """
+        Set the link at the specified notification
+        Ex. !link "some_key" "https://google.com"
+        :param ctx: the context of where the command was received
+        :param args: the key of the notification to set the link
+        :return: a boolean indicating if the notification link was successfully set
+        """
+        if await self.is_key_valid(ctx, args[0]):
+            await self.notificationList[args[0]].set_link(args[1])
+            return True
+
+        return False
+
+    @commands.command()
+    async def text(self, ctx, *args):
         """
         Set the text at the specified notification
         Ex. !link "some_key" "some_text"
         :param ctx: the context of where the command was received
-        :param arg: the key of the notification to set the text
+        :param args: the key of the notification to set the text
         :return: a boolean indicating if the notification text was successfully set
         """
-        if await self.is_key_valid(ctx, arg[0]):
-            self.notificationList[arg].notification_text = arg[1]
+        if await self.is_key_valid(ctx, args[0]):
+            await self.notificationList[args[0]].set_text(args[1])
             return True
 
         return False
@@ -156,3 +183,13 @@ def parse_interval(interval, interval_unit):
             return -1
     except ValueError:
         return -1
+
+
+def wrap_code_block(message):
+    return "```\r\n{0}\r\n```".format(message)
+
+
+def get_time_unit(interval):
+    for key in reversed(interval_lookup):
+        if interval / interval_lookup[key] >= 1:
+            return key
