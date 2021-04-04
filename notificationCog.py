@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from notification import notification
@@ -17,12 +18,13 @@ class NotificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.notificationList = {}
+        self.notificationListLock = asyncio.BoundedSemaphore()
         self.check_reminder.start()
 
     @tasks.loop(seconds=check_reminder_interval)
     async def check_reminder(self):
         """
-        Process if any reminders need to be sent
+        Process if any reminders need to be sent.
         Loops every check_reminder_interval to check if any reminders need to be sent.
         Compares if the last time the message has been sent has elapsed the requested interval.
         """
@@ -38,13 +40,13 @@ class NotificationCog(commands.Cog):
         Create a new reminder.
         Ex. !create "some_key" 5 minutes "some_text" "some_link (OPTIONAL)"
         :param ctx: The context from which a message was received.
-        :param args: passed list of arguments to the create method
+        :param args: passed list of arguments to the create method.
+        :return: The reminder object that was created.
         """
         if len(args) < 4:
             await ctx.send("Invalid number of arguments.")
             return -1
-        if args[0] in self.notificationList:
-            await ctx.send("Reminder {0} already exists.".format(args[0]))
+        if not await self.is_key_valid(ctx, args[0], "Reminder {0} already exists.".format(args[0])):
             return -1
 
         interval = parse_interval(args[1], args[2])
@@ -56,32 +58,43 @@ class NotificationCog(commands.Cog):
         reminder.runInterval = interval
         reminder.notification_text = args[3]
         reminder.notification_link = args[4]
-        self.notificationList[args[0]] = reminder
+        async with self.notificationListLock:
+            self.notificationList[args[0]] = reminder
         await ctx.send("{0} was successfully created.".format(args[0]))
         return reminder
 
     @commands.command()
+    async def delete(self, ctx, arg):
+        """
+        Delete a reminder that was created.
+        :param ctx: The context from where the message was sent.
+        :param arg: The key of the reminder to delete.
+        """
+        if self.key_is_valid(ctx, arg):
+            async with self.notificationListLock:
+                del self.notificationList[arg]
+
+    @commands.command()
     async def list(self, ctx):
         """
-        List all reminders that have been created
-        :param ctx:
-        :return:
+        List all reminders that have been created.
+        :param ctx: The context from where the message was sent..
         """
         if len(self.notificationList) > 0:
-            await ctx.send(
-                wrap_code_block(
-                    "\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList))))
+            async with self.notificationListLock:
+                await ctx.send(
+                    wrap_code_block(
+                        "\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList))))
 
     @commands.command()
     async def status(self, ctx, arg):
         """
-        Retrieve the current status of the specified reminder
-        :param ctx: the context of where the command was received
-        :param arg: the key of the notification to get the status of
-        :return:
+        Retrieve the current status of the specified reminder.
+        :param ctx: the context of where the command was received.
+        :param arg: the key of the notification to get the status of.
         """
         if await self.is_key_valid(ctx, arg):
-            reminder = self.notificationList[arg]
+            reminder = self.get_reminder(arg)
             interval_unit = get_time_unit(reminder.runInterval)
             await ctx.send(wrap_code_block(
                 "Name: {0}\r\n"
@@ -100,14 +113,14 @@ class NotificationCog(commands.Cog):
     @commands.command()
     async def start(self, ctx, arg):
         """
-        Start sending notifications for the specified key
+        Start sending notifications for the specified key.
         Ex: !Start "some_key"
-        :param ctx: the context of where the command was received
-        :param arg: the key of the notification to start
-        :return: a boolean indicating if the notification was successfully started
+        :param ctx: the context of where the command was received.
+        :param arg: the key of the notification to start.
+        :return: a boolean indicating if the notification was successfully started.
         """
         if await self.is_key_valid(ctx, arg):
-            await self.notificationList[arg].set_started(True)
+            await self.get_reminder(arg).set_started(True)
             return True
 
         return False
@@ -115,14 +128,14 @@ class NotificationCog(commands.Cog):
     @commands.command()
     async def stop(self, ctx, arg):
         """
-        Stop sending notifications for the specified key
+        Stop sending notifications for the specified key.
         Ex. !stop "some_key"
-        :param ctx: the context of where the command was received
-        :param arg: the key of the notification to stop
-        :return: a boolean indicating if the notification was successfully stopped
+        :param ctx: the context of where the command was received.
+        :param arg: the key of the notification to stop.
+        :return: a boolean indicating if the notification was successfully stopped.
         """
         if await self.is_key_valid(ctx, arg):
-            await self.notificationList[arg].set_started(False)
+            await self.get_reminder(arg).set_started(False)
             return True
 
         return False
@@ -130,14 +143,14 @@ class NotificationCog(commands.Cog):
     @commands.command()
     async def link(self, ctx, *args):
         """
-        Set the link at the specified notification
-        Ex. !link "some_key" "https://google.com"
-        :param ctx: the context of where the command was received
-        :param args: the key of the notification to set the link
-        :return: a boolean indicating if the notification link was successfully set
+        Set the link at the specified notification.
+        Ex. !link "some_key" "https://google.com".
+        :param ctx: the context of where the command was received.
+        :param args: the key of the notification to set the link.
+        :return: a boolean indicating if the notification link was successfully set.
         """
         if await self.is_key_valid(ctx, args[0]):
-            await self.notificationList[args[0]].set_link(args[1])
+            await self.get_reminder(args[0]).set_link(args[1])
             return True
 
         return False
@@ -145,14 +158,14 @@ class NotificationCog(commands.Cog):
     @commands.command()
     async def text(self, ctx, *args):
         """
-        Set the text at the specified notification
+        Set the text at the specified notification.
         Ex. !link "some_key" "some_text"
-        :param ctx: the context of where the command was received
-        :param args: the key of the notification to set the text
-        :return: a boolean indicating if the notification text was successfully set
+        :param ctx: the context of where the command was received.
+        :param args: the key of the notification to set the text.
+        :return: a boolean indicating if the notification text was successfully set.
         """
         if await self.is_key_valid(ctx, args[0]):
-            await self.notificationList[args[0]].set_text(args[1])
+            await self.get_reminder(args[0]).set_text(args[1])
             return True
 
         return False
@@ -163,16 +176,36 @@ class NotificationCog(commands.Cog):
 
     async def is_key_valid(self, ctx, key):
         """
-        Check if a key already exists and send a message if it does not
-        :param ctx: The context of where to send the message
-        :param key: The requested key to check if it exists/does not exist
-        :return: A boolean indicating if a the key is valid or not
+        Check if a key already exists and send a message if it does not.
+        :param ctx: The context of where to send the message.
+        :param key: The requested key to check if it exists/does not exist.
+        :return: A boolean indicating if a the key is valid or not.
         """
-        if key in self.notificationList:
-            return True
-        else:
-            await ctx.send("Reminder {0} does not exist.".format(key))
-            return False
+        return await self.is_key_valid(ctx, key, "Reminder {0} does not exist.".format(key))
+
+    async def is_key_valid(self, ctx, key, error_message):
+        """
+        Check if a key already exists and send a message if it does not.
+        :param ctx: The context of where to send the message.
+        :param key: The requested key to check if it exists/does not exist.
+        :param error_message: The ewrror message to send if the key is invalid.
+        :return: A boolean indicating if a the key is valid or not.
+        """
+        async with self.notificationListLock:
+            if key in self.notificationList:
+                return True
+            else:
+                await ctx.send(error_message)
+                return False
+
+    async def get_reminder(self, key):
+        """
+        Get the reminder at the specified key.
+        :param key: The key to search in the dictionary.
+        :return: The reminder object at the specified key.
+        """
+        async with self.notificationListLock:
+            return self.notificationListLock[key]
 
 
 def parse_interval(interval, interval_unit):
