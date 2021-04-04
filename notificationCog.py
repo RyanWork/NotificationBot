@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from discord.ext import commands, tasks
-import asyncio
+from notification import notification
 
 check_reminder_interval = 1.0
 interval_lookup = {
@@ -16,16 +16,8 @@ interval_lookup = {
 class NotificationCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.lastRunTime = None
-        self.ctx = None
-        self.notification_text = None
-        self.notification_link = None
-        self.runInterval = 0
-        self.ctxLock = asyncio.BoundedSemaphore()
-        self.textLock = asyncio.BoundedSemaphore()
-        self.linkLock = asyncio.BoundedSemaphore()
-        self.runIntervalLock = asyncio.BoundedSemaphore()
-        self.started = False
+        self.notificationList = {}
+        self.check_reminder.start()
 
     @tasks.loop(seconds=check_reminder_interval)
     async def check_reminder(self):
@@ -34,102 +26,133 @@ class NotificationCog(commands.Cog):
         Loops every check_reminder_interval to check if any reminders need to be sent.
         Compares if the last time the message has been sent has elapsed the requested interval.
         """
-        async with self.runIntervalLock:
-            async with self.textLock:
-                if (self.lastRunTime is None
-                    or self.lastRunTime + timedelta(seconds=self.runInterval) < datetime.now()) \
-                        and self.notification_text is not None:
-                    await self.send_reminder(self.notification_text)
+        for _, reminder in self.notificationList.items():
+            if reminder.started and (reminder.lastRunTime is None
+                                     or reminder.lastRunTime + timedelta(seconds=reminder.runInterval)
+                                     < datetime.now()):
+                await reminder.send_reminder()
 
     @commands.command()
-    async def create(self, ctx, arg):
+    async def create(self, ctx, *args):
         """
         Create a new reminder.
+        Ex. !create "some_key" 5 minutes "some_text" "some_link (OPTIONAL)"
         :param ctx: The context from which a message was received.
-        :param arg:
+        :param args: passed list of arguments to the create method
         """
-        return
+        if len(args) < 4:
+            await ctx.send("Invalid number of arguments.")
+            return -1
+        if args[0] in self.notificationList:
+            await ctx.send("Reminder {0} already exists.".format(args[0]))
+            return -1
+
+        interval = parse_interval(args[1], args[2])
+        if interval < 0:
+            await ctx.send("Invalid interval provided")
+
+        reminder = notification()
+        reminder.ctx = ctx
+        reminder.runInterval = interval
+        reminder.notification_text = args[3]
+        reminder.notification_link = args[4]
+        self.notificationList[args[0]] = reminder
+        await ctx.send("{0} was successfully created.".format(args[0]))
+        return reminder
 
     @commands.command()
-    async def link(self, _, arg):
+    async def list(self, ctx):
         """
-        Attach a link to a reminder
-        :param arg:
-        :param _:
+        List all reminders that have been created
+        :param ctx:
         :return:
         """
-        async with self.linkLock:
-            self.notification_link = arg
+        if len(self.notificationList) > 0:
+            await ctx.send("\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList)))
 
     @commands.command()
-    async def text(self, _, arg):
-        async with self.textLock:
-            self.notification_text = arg
-
-    @commands.command()
-    async def interval(self, _, *args):
+    async def start(self, ctx, arg):
         """
-        Set the interval for how often the reminder should be sent.
-        If no time unit is specified, assume seconds.
-        :param args: list of arguments passed to the interval method
-        :param _:
-        :return:
+        Start sending notifications for the specified key
+        Ex: !Start "some_key"
+        :param ctx: the context of where the command was received
+        :param arg: the key of the notification to start
+        :return: a boolean indicating if the notification was successfully started
         """
-        if len(args) < 0:
-            await self.send("Ex. !interval 10 days")
+        if await self.is_key_valid(ctx, arg):
+            self.notificationList[arg].started = True
+            return True
 
-        time_factor = 1
-        if args[1] is not None:
-            time_unit = args[1].lower().rstrip('s')
-            if time_unit in interval_lookup:
-                time_factor = interval_lookup[time_unit]
-
-        try:
-            parsed_int = int(args[0])
-            if parsed_int * time_factor > check_reminder_interval:
-                async with self.runIntervalLock:
-                    self.runInterval = parsed_int * time_factor
-            else:
-                await self.send("Value must be > {0}".format(check_reminder_interval))
-        except ValueError:
-            await self.send("Invalid value.")
+        return False
 
     @commands.command()
-    async def start(self, ctx):
-        async with self.ctxLock:
-            self.ctx = ctx
+    async def stop(self, ctx, arg):
+        """
+        Stop sending notifications for the specified key
+        Ex. !stop "some_key"
+        :param ctx: the context of where the command was received
+        :param arg: the key of the notification to stop
+        :return: a boolean indicating if the notification was successfully stopped
+        """
+        if await self.is_key_valid(ctx, arg):
+            self.notificationList[arg].started = False
+            return False
 
-        if self.started is False:
-            self.check_reminder.start()
-            self.started = True
+        return False
 
     @commands.command()
-    async def stop(self, _):
-        self.check_reminder.cancel()
-        self.started = False
+    async def link(self, ctx, *arg):
+        """
+        Set the link at the specified notification
+        Ex. !link "some_key" "https://google.com"
+        :param ctx: the context of where the command was received
+        :param arg: the key of the notification to set the link
+        :return: a boolean indicating if the notification link was successfully set
+        """
+        if await self.is_key_valid(ctx, arg[0]):
+            self.notificationList[arg].notification_link = arg[1]
+            return True
 
-    @commands.command(name='set')
-    async def set_text_and_link(self, _, *args):
-        if len(args) < 0 or len(args) > 2:
-            await self.send('Please provide two parameters.\r\n Ex: !set "Some kind of text" https://google.com')
-            return
+        return False
 
-        self.notification_text = args[0]
-        self.notification_link = args[1]
+    @commands.command()
+    async def text(self, ctx, *arg):
+        """
+        Set the text at the specified notification
+        Ex. !link "some_key" "some_text"
+        :param ctx: the context of where the command was received
+        :param arg: the key of the notification to set the text
+        :return: a boolean indicating if the notification text was successfully set
+        """
+        if await self.is_key_valid(ctx, arg[0]):
+            self.notificationList[arg].notification_text = arg[1]
+            return True
+
+        return False
 
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
         await self.bot.wait_until_ready()
 
-    async def send(self, message):
-        async with self.ctxLock:
-            await self.ctx.send(message)
+    async def is_key_valid(self, ctx, key):
+        if key in self.notificationList:
+            return True
+        else:
+            await ctx.send("Reminder {0} does not exist.".format(key))
+            return False
 
-    async def send_reminder(self, notification):
-        self.lastRunTime = datetime.now()
-        if notification is not None:
-            async with self.linkLock:
-                await self.send('{0}\n{1}'.format(notification,
-                                                  self.notification_link if
-                                                  self.notification_link is not None
-                                                  else ""))
+
+def parse_interval(interval, interval_unit):
+    time_factor = 1
+    if interval_unit is not None:
+        time_unit = interval_unit.lower().rstrip('s')
+        if time_unit in interval_lookup:
+            time_factor = interval_lookup[time_unit]
+    try:
+        parsed_interval = int(interval)
+        if parsed_interval * time_factor > check_reminder_interval:
+            return parsed_interval * time_factor
+        else:
+            return -1
+    except ValueError:
+        return -1
