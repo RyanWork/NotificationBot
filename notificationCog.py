@@ -43,7 +43,7 @@ class NotificationCog(commands.Cog):
         :param args: passed list of arguments to the create method.
         :return: The reminder object that was created.
         """
-        if len(args) < 4:
+        if len(args) < 1:
             await ctx.send("Invalid number of arguments.")
             return -1
 
@@ -52,7 +52,7 @@ class NotificationCog(commands.Cog):
                 await ctx.send("Reminder _{0}_ already exists".format(args[0]))
                 return -1
 
-        interval = parse_interval(args[1], args[2])
+        interval = parse_interval(args[1], args[2]) if len(args) >= 3 else 0
         if interval < 0:
             await ctx.send("Invalid interval provided")
             return -1
@@ -60,8 +60,8 @@ class NotificationCog(commands.Cog):
         reminder = notification()
         reminder.ctx = ctx
         reminder.runInterval = interval
-        reminder.notification_text = args[3]
-        reminder.notification_link = args[4]
+        reminder.notification_text = None if len(args) <= 3 else args[3]
+        reminder.notification_link = None if len(args) <= 4 else args[4]
         async with self.notificationListLock:
             self.notificationList[args[0]] = reminder
         await ctx.send("Reminder _{0}_ was successfully created.".format(args[0]))
@@ -108,12 +108,12 @@ class NotificationCog(commands.Cog):
                 "Running Interval: {3} {4}(s)\r\n"
                 "Running: {5}\r\n"
                 "Last Ran: {6}".format(arg,
-                                       reminder.notification_text if not None else "N/A",
-                                       reminder.notification_link if not None else "N/A",
+                                       reminder.notification_text if reminder.notification_text is not None else "N/A",
+                                       reminder.notification_link if reminder.notification_link is not None else "N/A",
                                        round(reminder.runInterval / interval_lookup[interval_unit], 2),
                                        interval_unit,
                                        reminder.started,
-                                       reminder.lastRunTime if not None else "N/A")))
+                                       reminder.lastRunTime if reminder.lastRunTime is not None else "N/A")))
 
     @commands.command()
     async def start(self, ctx, arg):
@@ -126,9 +126,18 @@ class NotificationCog(commands.Cog):
         """
         if await self.is_key_valid(ctx, arg):
             reminder = await self.get_reminder(arg)
-            await reminder.set_started(True)
-            await ctx.send("Reminder _{0}_ was started.".format(arg))
-            return True
+            if reminder.notification_text is None:
+                await ctx.send("You must set a notification text for _{0}_\r\n"
+                               "Ex. !text {0} \"Hello World\"".format(arg))
+                return False
+            elif reminder.runInterval is None or reminder.runInterval <= 0:
+                await ctx.send("You must set a valid run interval for _{0}_\r\n"
+                               "Ex. !interval {0} 10 seconds".format(arg))
+                return False
+            else:
+                await reminder.set_started(True)
+                await ctx.send("Reminder _{0}_ was started.".format(arg))
+                return True
 
         return False
 
@@ -183,6 +192,19 @@ class NotificationCog(commands.Cog):
 
         return False
 
+    @commands.command()
+    async def interval(self, ctx, *args):
+        if await self.is_key_valid(ctx, args[0]):
+            interval = parse_interval(args[1], args[2]) if len(args) >= 3 else 0
+            if interval < 0:
+                await ctx.send("Invalid interval provided\r\n"
+                               "Ex. !interval 10 seconds")
+                return -1
+
+            reminder = await self.get_reminder(args[0])
+            await reminder.set_interval(interval)
+            await ctx.send("Interval for {0} updated.".format(args[0]))
+
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
         await self.bot.wait_until_ready()
@@ -225,7 +247,7 @@ def parse_interval(interval, interval_unit):
         if time_unit in interval_lookup:
             time_factor = interval_lookup[time_unit]
     try:
-        parsed_interval = int(interval)
+        parsed_interval = float(interval)
         if parsed_interval * time_factor > check_reminder_interval:
             return parsed_interval * time_factor
         else:
@@ -242,3 +264,5 @@ def get_time_unit(interval):
     for key in reversed(interval_lookup):
         if interval / interval_lookup[key] >= 1:
             return key
+
+    return "second"
