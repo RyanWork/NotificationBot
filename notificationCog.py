@@ -12,6 +12,12 @@ interval_lookup = {
     "week": 604800,
     "month": 2419200
 }
+special_interval_dictionary = {
+    "daily": 86400,
+    "weekly": 604800,
+    "monthly": 2419200,
+    "annually": 29030400
+}
 
 
 class NotificationCog(commands.Cog):
@@ -52,7 +58,7 @@ class NotificationCog(commands.Cog):
                 await ctx.send("Reminder _{0}_ already exists".format(args[0]))
                 return -1
 
-        interval = parse_interval(args[1], args[2]) if len(args) >= 3 else 0
+        interval = parse_interval(args[1], args[2] if len(args) >= 3 else None) if len(args) >= 2 else 0
         if interval < 0:
             await ctx.send("Invalid interval provided")
             return -1
@@ -180,8 +186,8 @@ class NotificationCog(commands.Cog):
         """
         Set the text at the specified notification.
         Ex. !link "some_key" "some_text"
-        :param ctx: the context of where the command was received.
-        :param args: the key of the notification to set the text.
+        :param ctx: The context of where the command was received.
+        :param args: The key of the notification to set the text.
         :return: a boolean indicating if the notification text was successfully set.
         """
         if await self.is_key_valid(ctx, args[0]):
@@ -194,8 +200,14 @@ class NotificationCog(commands.Cog):
 
     @commands.command()
     async def interval(self, ctx, *args):
+        """
+        Set the interval of the specified reminder.
+        :param ctx: The context of where the command was received.
+        :param args: The arguments containing the key to update and the specified interval to set it to.
+        :return: The interval that it was set to.
+        """
         if await self.is_key_valid(ctx, args[0]):
-            interval = parse_interval(args[1], args[2]) if len(args) >= 3 else 0
+            interval = parse_interval(args[1], args[2]) if len(args) >= 3 else -1
             if interval < 0:
                 await ctx.send("Invalid interval provided\r\n"
                                "Ex. !interval 10 seconds")
@@ -204,9 +216,13 @@ class NotificationCog(commands.Cog):
             reminder = await self.get_reminder(args[0])
             await reminder.set_interval(interval)
             await ctx.send("Interval for {0} updated.".format(args[0]))
+            return interval
 
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
+        """
+        Ensure that the bot is ready before we begin looping
+        """
         await self.bot.wait_until_ready()
 
     async def is_key_valid(self, ctx, key):
@@ -241,6 +257,9 @@ def parse_interval(interval, interval_unit):
     :param interval_unit: The unit of time provided for the interval.
     :return: The actual interval based off the time factor.
     """
+    if interval in special_interval_dictionary:
+        return special_interval_dictionary[interval]
+
     time_factor = 1
     if interval_unit is not None:
         time_unit = interval_unit.lower().rstrip('s')
@@ -257,10 +276,20 @@ def parse_interval(interval, interval_unit):
 
 
 def wrap_code_block(message):
+    """
+    Wrap a message in a discord code block
+    :param message: The message to wrap
+    :return: A message wrapped in a code block
+    """
     return "```\r\n{0}\r\n```".format(message)
 
 
 def get_time_unit(interval):
+    """
+    Get the associated time unit that fits the interval best
+    :param interval: The interval in seconds
+    :return: The unit of time that best fits
+    """
     for key in reversed(interval_lookup):
         if interval / interval_lookup[key] >= 1:
             return key
