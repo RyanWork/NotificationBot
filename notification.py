@@ -42,16 +42,21 @@ class notification:
             self.ctx = ctx
         return self.ctx
 
-    async def send(self, message):
-        async with self.ctxLock:
-            await self.ctx.send(message)
+    async def send(self, ctx, is_test_message, message):
+        if is_test_message:
+            await ctx.send(message)
+        else:
+            async with self.ctxLock:
+                await self.ctx.send(message)
 
-    async def send_reminder(self):
-        self.lastRunTime = datetime.now()
+    async def send_reminder(self, ctx, update_last_runtime=True):
+        if update_last_runtime:
+            self.lastRunTime = datetime.now()
         if self.notification_text is not None:
             async with self.textLock:
                 async with self.linkLock:
-                    await self.send('{0}\n{1}'.format(self.notification_text,
+                    await self.send(ctx, not update_last_runtime,
+                                    '{0}\n{1}'.format(self.notification_text,
                                                       self.notification_link if
                                                       self.notification_link is not None
                                                       else ""))

@@ -125,6 +125,8 @@ class NotificationCog(commands.Cog):
                 await ctx.send(
                     wrap_code_block(
                         "\n".join("{0}\t\t{1}".format(i + 1, key) for i, key in enumerate(self.notificationList))))
+        else:
+            await ctx.send("There are no notifications.")
 
     @commands.command()
     async def status(self, ctx, arg):
@@ -247,6 +249,16 @@ class NotificationCog(commands.Cog):
             await reminder.set_interval(interval)
             await ctx.send("Interval for {0} updated.".format(args[0]))
             return interval
+
+    @commands.command()
+    async def test(self, ctx, arg):
+        """
+        Send a test message to yourself.
+        :param ctx: The context in which the message was sent
+        """
+        if await self.is_key_valid(ctx, arg):
+            reminder = await self.get_reminder(arg)
+            await reminder.send_reminder(ctx, False)
 
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
