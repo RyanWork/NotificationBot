@@ -248,10 +248,6 @@ class NotificationCog(commands.Cog):
             await ctx.send("Interval for {0} updated.".format(args[0]))
             return interval
 
-    # @commands.command()
-    # async def help(self, ctx):
-
-
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
         """
