@@ -37,6 +37,11 @@ class notification:
             self.started = running_state
         return self.started
 
+    async def set_ctx(self, ctx):
+        async with self.ctxLock:
+            self.ctx = ctx
+        return self.ctx
+
     async def send(self, message):
         async with self.ctxLock:
             await self.ctx.send(message)

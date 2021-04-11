@@ -44,7 +44,8 @@ class NotificationCog(commands.Cog):
     async def create(self, ctx, *args):
         """
         Create a new reminder.
-        Ex. !create "some_key" 5 minutes "some_text" "some_link (OPTIONAL)"
+        Ex. !create test 5 minutes "Remind me please!" "https://google.com (OPTIONAL)"
+        Ex. !create test daily "YYYY-MM-dd 13:00:00" "Remind me please!" "https://google.com (OPTIONAL)"
         :param ctx: The context from which a message was received.
         :param args: passed list of arguments to the create method.
         :return: The reminder object that was created.
@@ -58,7 +59,12 @@ class NotificationCog(commands.Cog):
                 await ctx.send("Reminder _{0}_ already exists".format(args[0]))
                 return -1
 
-        interval = parse_interval(args[1], args[2] if len(args) >= 3 else None) if len(args) >= 2 else 0
+        is_special_time_unit = False
+        interval = 0
+        if len(args) >= 2:
+            is_special_time_unit = args[1] in special_interval_dictionary
+            interval = parse_interval(args[1], args[2] if len(args) >= 3 else None)
+
         if interval < 0:
             await ctx.send("Invalid interval provided")
             return -1
@@ -66,8 +72,31 @@ class NotificationCog(commands.Cog):
         reminder = notification()
         reminder.ctx = ctx
         reminder.runInterval = interval
-        reminder.notification_text = None if len(args) <= 3 else args[3]
-        reminder.notification_link = None if len(args) <= 4 else args[4]
+        if len(args) >= 3 and is_special_time_unit:
+            # This parameter must be an interval at the time of day
+            try:
+                parsed_time = datetime.strptime(args[2], '%Y-%m-%d %H:%M:%S')
+                reminder.lastRunTime = datetime.now()\
+                    .replace(hour=parsed_time.hour, minute=parsed_time.minute, second=parsed_time.second)
+                if reminder.lastRunTime < datetime.now():
+                    await ctx.send("Please enter a valid date that's not in the past!")
+                    return -1
+            except ValueError:
+                await ctx.send("Please enter a date to run the reminder in the 24-hour format YYYY-mm-dd HH:MM:SS")
+                return -1
+
+        if len(args) >= 4:
+            reminder.notification_text = args[3]
+        else:
+            # any other case, text is not set
+            reminder.notification_text = None
+
+        if len(args) >= 5:
+            reminder.notification_link = args[4]
+        else:
+            # any other case, link is not set
+            reminder.notification_link = None
+
         async with self.notificationListLock:
             self.notificationList[args[0]] = reminder
         await ctx.send("Reminder _{0}_ was successfully created.".format(args[0]))
@@ -141,6 +170,7 @@ class NotificationCog(commands.Cog):
                                "Ex. !interval {0} 10 seconds".format(arg))
                 return False
             else:
+                await reminder.set_ctx(ctx)
                 await reminder.set_started(True)
                 await ctx.send("Reminder _{0}_ was started.".format(arg))
                 return True
@@ -218,6 +248,10 @@ class NotificationCog(commands.Cog):
             await ctx.send("Interval for {0} updated.".format(args[0]))
             return interval
 
+    # @commands.command()
+    # async def help(self, ctx):
+
+
     @check_reminder.before_loop
     async def before_check_reminder_loop(self):
         """
@@ -267,7 +301,7 @@ def parse_interval(interval, interval_unit):
             time_factor = interval_lookup[time_unit]
     try:
         parsed_interval = float(interval)
-        if parsed_interval * time_factor > check_reminder_interval:
+        if parsed_interval * time_factor >= check_reminder_interval:
             return parsed_interval * time_factor
         else:
             return -1
